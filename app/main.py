@@ -1,7 +1,10 @@
 # app/main.py
 
+import os
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.middleware.sessions import SessionMiddleware
 
 # These two are not strictly needed anymore in main, but ok to keep
 from app.db.session import engine
@@ -16,6 +19,7 @@ from app.api.v1.plans import router as plans_router
 from app.api.v1.billing import router as billing_router
 from app.api.v1.watchlist import router as watchlist_router
 from app.api.v1.memberships import router as memberships_router
+from app.api.v1.auth import router as auth_router  # NEW
 
 app = FastAPI(title="Kartquake")
 
@@ -27,10 +31,19 @@ app.add_middleware(
         "http://127.0.0.1:5173",
         "http://localhost:5174",
         "http://127.0.0.1:5174",
+        "https://kartquake.vercel.app",  # your Vercel frontend
+        "https://kartquake.com",         # your main domain
     ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+)
+
+# 🔐 Session middleware for OAuth (Authlib uses request.session)
+#    SESSION_SECRET should be a long random string in your .env
+app.add_middleware(
+    SessionMiddleware,
+    secret_key=os.getenv("SESSION_SECRET", "dev-session-secret-change-me"),
 )
 
 # ✅ Single startup hook – calls init_db (which internally does Base.metadata.create_all)
@@ -47,6 +60,7 @@ app.include_router(plans_router)
 app.include_router(billing_router)
 app.include_router(watchlist_router)
 app.include_router(memberships_router)
+app.include_router(auth_router)  # NEW
 
 
 @app.get("/")
