@@ -20,8 +20,49 @@ def init_db() -> None:
     #    Use a single transaction so we don't need explicit commit().
     with engine.begin() as conn:
         # --------------------------------------------------
-        # Ensure new USER columns exist (subscription + free tier)
+        # Ensure USER auth + subscription + free tier columns exist
         # --------------------------------------------------
+
+        # Make email nullable so we can support anonymous / OAuth-only users
+        conn.execute(
+            text(
+                """
+                ALTER TABLE users
+                ALTER COLUMN email DROP NOT NULL;
+                """
+            )
+        )
+
+        # New auth-related columns
+        conn.execute(
+            text(
+                """
+                ALTER TABLE users
+                ADD COLUMN IF NOT EXISTS auth_provider VARCHAR NOT NULL DEFAULT 'anonymous';
+                """
+            )
+        )
+
+        conn.execute(
+            text(
+                """
+                ALTER TABLE users
+                ADD COLUMN IF NOT EXISTS auth_provider_subject VARCHAR NULL;
+                """
+            )
+        )
+
+        # Index to speed up lookups by (auth_provider_subject)
+        conn.execute(
+            text(
+                """
+                CREATE INDEX IF NOT EXISTS ix_users_auth_provider_subject
+                ON users (auth_provider_subject);
+                """
+            )
+        )
+
+        # Plan + membership + free tier limits
         conn.execute(
             text(
                 """

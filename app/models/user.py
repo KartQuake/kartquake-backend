@@ -21,12 +21,25 @@ class User(Base):
     __tablename__ = "users"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid4, index=True)
-    email = Column(String, unique=True, index=True, nullable=False)
+
+    # Email is now OPTIONAL so we can support anonymous / guest users
+    # and users created first via OAuth before we confirm their email.
+    email = Column(String, unique=True, index=True, nullable=True)
     name = Column(String, nullable=True)
     zip_code = Column(String, nullable=True)
 
-    # NEW: plan + membership / free-tier fields
-    # -----------------------------------------
+    # Auth provider metadata
+    # ----------------------
+    # "anonymous"  -> created via guest signup
+    # "google"     -> created/linked via Google OAuth
+    # "apple"      -> created/linked via Apple OAuth
+    auth_provider = Column(String, nullable=False, default="anonymous")
+
+    # Provider-specific subject / user id (e.g. Google "sub" claim, Apple "sub")
+    auth_provider_subject = Column(String, nullable=True, index=True)
+
+    # Plan + membership / free-tier fields
+    # ------------------------------------
     # plan: "free" or "premium" for now
     plan = Column(String, nullable=False, default="free")
 
@@ -74,28 +87,46 @@ class User(Base):
 # ============================================================
 
 class UserBase(BaseModel):
-    email: EmailStr
+    # All optional to support:
+    # - anonymous users (no email yet)
+    # - progressively adding profile info
+    email: Optional[EmailStr] = None
     name: Optional[str] = None
     zip_code: Optional[str] = None
 
 
 class UserCreate(UserBase):
-    """For now, new users always start as free tier with defaults."""
-    pass
+    """
+    Used when creating a user (guest signup, Google/Apple sign-in, etc).
+
+    For guest signup from the frontend we’ll typically send:
+      { "auth_provider": "anonymous" }
+
+    For Google/Apple callback handlers you might build:
+      {
+        "email": "...",
+        "name": "...",
+        "auth_provider": "google",
+        "auth_provider_subject": "<google-sub-claim>"
+      }
+    """
+    auth_provider: Optional[str] = "anonymous"      # "anonymous" | "google" | "apple"
+    auth_provider_subject: Optional[str] = None     # provider-specific user id
 
 
 class UserUpdate(BaseModel):
-    # Let you change name/zip only for now.
-    # (You could optionally add plan & membership fields here later
-    #  if you want an admin UI to edit them.)
+    # Let you change profile info for now.
+    # You can expand this later for plan/membership admin changes.
     name: Optional[str] = None
     zip_code: Optional[str] = None
+    has_costco_membership: Optional[bool] = None
+    has_costco_addon: Optional[bool] = None
 
 
 class UserRead(UserBase):
     id: UUIDType
 
-    # Expose the new fields on GET /users
+    # Expose the new fields on GET /users / auth responses
     plan: str
     has_costco_membership: bool
     has_costco_addon: bool
@@ -103,8 +134,12 @@ class UserRead(UserBase):
     free_plan_runs_limit: int
     free_plan_runs_used: int
 
+    auth_provider: str
+    auth_provider_subject: Optional[str] = None
+
     created_at: datetime
     updated_at: datetime
 
     class Config:
-        from_attributes = True  # Pydantic v2 replacement for orm_mode = True
+        # Pydantic v2 option (replaces orm_mode = True)
+        from_attributes = True
